@@ -1,38 +1,56 @@
+require('dotenv').config();
 const fs = require('fs');
 const readline = require('readline');
+//  import OpenAI from 'openai';
+const { OpenAI } = require('openai'); 
 
-// Load data from the file
-const data = JSON.parse(fs.readFileSync('data.json', 'utf-8'));
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-// Set up input/output
+// Load and flatten the scraped JSON
+const raw = JSON.parse(fs.readFileSync('crawled-cervical-data.json', 'utf8'));
+let context = '';
+
+for (const [url, sections] of Object.entries(raw)) {
+  for (const [heading, paragraphs] of Object.entries(sections)) {
+    context += `## ${heading}\n${paragraphs.join('\n')}\n\n`;
+  }
+}
+
+// Setup chatbot
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout
 });
 
-function ask() {
-  rl.question('Ask me something about cervical cancer: ', (input) => {
-    const query = input.toLowerCase();
-    let found = false;
+console.log("🩺 Cervical Health Assistant (type 'exit' to quit)");
 
-    for (const heading in data) {
-      if (heading.toLowerCase().includes(query)) {
-        console.log(`\n📘 ${heading}:`);
-        data[heading].forEach((paragraph, i) => {
-          console.log(`- ${paragraph}`);
-        });
-        found = true;
-        break;
-      }
+function askQuestion() {
+  rl.question('\nYou: ', async (question) => {
+    if (question.toLowerCase() === 'exit') return rl.close();
+
+    try {
+      const chat = await openai.chat.completions.create({
+       model: 'gpt-3.5-turbo' ,
+       messages: [  {
+            role: 'system',
+            content: `You are a helpful health assistant. Use the following context about cervical cancer to answer questions:\n\n${context}`
+          },
+          {
+            role: 'user',
+            content: question
+          }
+        ]
+      });
+
+      console.log(`🤖 ${chat.choices[0].message.content}`);
+    } catch (err) {
+      console.error('⚠️ Error:', err.message);
     }
 
-    if (!found) {
-      console.log("❌ Sorry, I couldn't find anything relevant.");
-    }
-
-    console.log(); // blank line
-    ask(); // ask again
+    askQuestion();
   });
 }
 
-ask();  // start the bot
+askQuestion();
